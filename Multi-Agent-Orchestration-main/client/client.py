@@ -1,0 +1,494 @@
+import aiohttp
+import json
+import os
+from typing import AsyncGenerator, Dict, Any, Generator
+import requests
+from schema import (
+    AuthLoginInput,
+    AuthRegisterInput,
+    AuthToken,
+    ChatMessage,
+    Feedback,
+    StreamInput,
+    UserInput,
+    model_dump_compat,
+    model_validate_compat,
+)
+
+_SSE_SKIP = "__SSE_SKIP__"
+
+
+class AgentClient:
+    """Client for interacting with the agent service."""
+
+    def __init__(self, base_url: str = "http://localhost:8000"):
+        """
+        Initialize the client.
+
+        Args:
+            base_url (str): The base URL of the agent service.
+        """
+        self.base_url = base_url
+        self.auth_secret = os.getenv("AUTH_SECRET")
+        self.access_token: str | None = None
+
+    def set_access_token(self, token: str | None) -> None:
+        self.access_token = (token or "").strip() or None
+
+    @property
+    def _headers(self):
+        headers = {}
+        if self.access_token:
+            headers["Authorization"] = f"Bearer {self.access_token}"
+        elif self.auth_secret:
+            headers["Authorization"] = f"Bearer {self.auth_secret}"
+        return headers
+
+    async def aregister(self, user_id: str, password: str) -> AuthToken:
+        async with aiohttp.ClientSession() as session:
+            request = AuthRegisterInput(user_id=user_id, password=password)
+            async with session.post(
+                f"{self.base_url}/auth/register",
+                json=model_dump_compat(request),
+                headers=self._headers,
+            ) as response:
+                if response.status != 200:
+                    raise Exception(f"Error: {response.status} - {await response.text()}")
+                payload = await response.json()
+                auth = model_validate_compat(AuthToken, payload)
+                self.set_access_token(auth.access_token)
+                return auth
+
+    def register(self, user_id: str, password: str) -> AuthToken:
+        request = AuthRegisterInput(user_id=user_id, password=password)
+        response = requests.post(
+            f"{self.base_url}/auth/register",
+            json=model_dump_compat(request),
+            headers=self._headers,
+        )
+        if response.status_code != 200:
+            raise Exception(f"Error: {response.status_code} - {response.text}")
+        auth = model_validate_compat(AuthToken, response.json())
+        self.set_access_token(auth.access_token)
+        return auth
+
+    async def alogin(self, user_id: str, password: str) -> AuthToken:
+        async with aiohttp.ClientSession() as session:
+            request = AuthLoginInput(user_id=user_id, password=password)
+            async with session.post(
+                f"{self.base_url}/auth/login",
+                json=model_dump_compat(request),
+                headers=self._headers,
+            ) as response:
+                if response.status != 200:
+                    raise Exception(f"Error: {response.status} - {await response.text()}")
+                payload = await response.json()
+                auth = model_validate_compat(AuthToken, payload)
+                self.set_access_token(auth.access_token)
+                return auth
+
+    def login(self, user_id: str, password: str) -> AuthToken:
+        request = AuthLoginInput(user_id=user_id, password=password)
+        response = requests.post(
+            f"{self.base_url}/auth/login",
+            json=model_dump_compat(request),
+            headers=self._headers,
+        )
+        if response.status_code != 200:
+            raise Exception(f"Error: {response.status_code} - {response.text}")
+        auth = model_validate_compat(AuthToken, response.json())
+        self.set_access_token(auth.access_token)
+        return auth
+
+    async def ainvoke(self, message: str, model: str|None = None, thread_id: str|None = None) -> ChatMessage:
+        """
+        Invoke the agent asynchronously. Only the final message is returned.
+
+        Args:
+            message (str): The message to send to the agent
+            model (str, optional): LLM model to use for the agent
+            thread_id (str, optional): Thread ID for continuing a conversation
+
+        Returns:
+            AnyMessage: The response from the agent
+        """
+        async with aiohttp.ClientSession() as session:
+            request = UserInput(message=message)
+            if thread_id:
+                request.thread_id = thread_id
+            if model:
+                request.model = model
+            async with session.post(
+                f"{self.base_url}/invoke",
+                json=model_dump_compat(request),
+                headers=self._headers,
+            ) as response:
+                if response.status == 200:
+                    result = await response.json()
+                    return model_validate_compat(ChatMessage, result)
+                else:
+                    raise Exception(f"Error: {response.status} - {await response.text()}")
+
+    def invoke(self, message: str, model: str|None = None, thread_id: str|None = None) -> ChatMessage:
+        """
+        Invoke the agent synchronously. Only the final message is returned.
+
+        Args:
+            message (str): The message to send to the agent
+            model (str, optional): LLM model to use for the agent
+            thread_id (str, optional): Thread ID for continuing a conversation
+
+        Returns:
+            ChatMessage: The response from the agent
+        """
+        request = UserInput(message=message)
+        if thread_id:
+            request.thread_id = thread_id
+        if model:
+            request.model = model
+        response = requests.post(
+            f"{self.base_url}/invoke",
+            json=model_dump_compat(request),
+            headers=self._headers,
+        )
+        if response.status_code == 200:
+            return model_validate_compat(ChatMessage, response.json())
+        else:
+            raise Exception(f"Error: {response.status_code} - {response.text}")
+
+    def _parse_stream_line(self, line: bytes) -> ChatMessage | str | None:
+        decoded = line.decode("utf-8").strip()
+        if not decoded:
+            return _SSE_SKIP
+        if not decoded.startswith("data: "):
+            return _SSE_SKIP
+
+        data = decoded[6:]
+        if data == "[DONE]":
+            return None
+        try:
+            parsed = json.loads(data)
+        except Exception as e:
+            raise Exception(f"Error JSON parsing message from server: {e}")
+
+        match parsed["type"]:
+            case "message":
+                # Convert the JSON formatted message to an AnyMessage
+                try:
+                    return model_validate_compat(ChatMessage, parsed["content"])
+                except Exception as e:
+                    raise Exception(f"Server returned invalid message: {e}")
+            case "token":
+                # Yield the str token directly
+                return parsed["content"]
+            case "error":
+                raise Exception(parsed["content"])
+            case _:
+                return _SSE_SKIP
+
+    def stream(
+            self,
+            message: str,
+            model: str|None = None,
+            thread_id: str|None = None,
+            stream_tokens: bool = True
+        ) -> Generator[ChatMessage | str, None, None]:
+        """
+        Stream the agent's response synchronously.
+        
+        Each intermediate message of the agent process is yielded as a ChatMessage.
+        If stream_tokens is True (the default value), the response will also yield
+        content tokens from streaming models as they are generated.
+
+        Args:
+            message (str): The message to send to the agent
+            model (str, optional): LLM model to use for the agent
+            thread_id (str, optional): Thread ID for continuing a conversation
+            stream_tokens (bool, optional): Stream tokens as they are generated
+                Default: True
+
+        Returns:
+            Generator[ChatMessage | str, None, None]: The response from the agent
+        """
+        request = StreamInput(message=message, stream_tokens=stream_tokens)
+        if thread_id:
+            request.thread_id = thread_id
+        if model:
+            request.model = model
+        response = requests.post(
+            f"{self.base_url}/stream",
+            json=model_dump_compat(request),
+            headers=self._headers,
+            stream=True,
+        )
+        if response.status_code != 200:
+            raise Exception(f"Error: {response.status_code} - {response.text}")
+        
+        for line in response.iter_lines():
+            if line:
+                parsed = self._parse_stream_line(line)
+                if parsed == _SSE_SKIP:
+                    continue
+                if parsed is None:
+                    break
+                yield parsed
+
+    async def astream(
+            self,
+            message: str,
+            model: str|None = None,
+            thread_id: str|None = None,
+            stream_tokens: bool = True
+        ) -> AsyncGenerator[ChatMessage | str, None]:
+        """
+        Stream the agent's response asynchronously.
+        
+        Each intermediate message of the agent process is yielded as an AnyMessage.
+        If stream_tokens is True (the default value), the response will also yield
+        content tokens from streaming modelsas they are generated.
+
+        Args:
+            message (str): The message to send to the agent
+            model (str, optional): LLM model to use for the agent
+            thread_id (str, optional): Thread ID for continuing a conversation
+            stream_tokens (bool, optional): Stream tokens as they are generated
+                Default: True
+
+        Returns:
+            AsyncGenerator[ChatMessage | str, None]: The response from the agent
+        """
+        async with aiohttp.ClientSession() as session:
+            request = StreamInput(message=message, stream_tokens=stream_tokens)
+            if thread_id:
+                request.thread_id = thread_id
+            if model:
+                request.model = model
+            async with session.post(
+                f"{self.base_url}/stream",
+                json=model_dump_compat(request),
+                headers=self._headers,
+            ) as response:
+                if response.status != 200:
+                    raise Exception(f"Error: {response.status} - {await response.text()}")
+                # Parse incoming events with the SSE protocol
+                async for line in response.content:
+                    if line:
+                        parsed = self._parse_stream_line(line)
+                        if parsed == _SSE_SKIP:
+                            continue
+                        if parsed is None:
+                            break
+                        yield parsed
+
+    async def acreate_feedback(
+            self,
+            run_id: str,
+            key: str,
+            score: float,
+            kwargs: Dict[str, Any] | None = None
+        ):
+        """
+        Create a feedback record for a run.
+
+        This is a simple wrapper for the LangSmith create_feedback API, so the
+        credentials can be stored and managed in the service rather than the client.
+        See: https://api.smith.langchain.com/redoc#tag/feedback/operation/create_feedback_api_v1_feedback_post
+        """
+        async with aiohttp.ClientSession() as session:
+            request = Feedback(
+                run_id=run_id,
+                key=key,
+                score=score,
+                kwargs=kwargs or {},
+            )
+            async with session.post(
+                f"{self.base_url}/feedback",
+                json=model_dump_compat(request),
+                headers=self._headers,
+            ) as response:
+                if response.status != 200:
+                    raise Exception(f"Error: {response.status} - {await response.text()}")
+                await response.json()
+
+    async def aget_store(self, thread_id: str, limit: int = 200) -> Dict[str, Any]:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{self.base_url}/store/{thread_id}",
+                params={"limit": max(1, min(int(limit), 200))},
+                headers=self._headers,
+            ) as response:
+                if response.status != 200:
+                    raise Exception(f"Error: {response.status} - {await response.text()}")
+                return await response.json()
+
+    def get_store(self, thread_id: str, limit: int = 200) -> Dict[str, Any]:
+        response = requests.get(
+            f"{self.base_url}/store/{thread_id}",
+            params={"limit": max(1, min(int(limit), 200))},
+            headers=self._headers,
+        )
+        if response.status_code != 200:
+            raise Exception(f"Error: {response.status_code} - {response.text}")
+        return response.json()
+
+    async def alist_threads(self, limit: int = 30) -> Dict[str, Any]:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{self.base_url}/store/threads",
+                params={"limit": max(1, min(int(limit), 200))},
+                headers=self._headers,
+            ) as response:
+                if response.status != 200:
+                    raise Exception(f"Error: {response.status} - {await response.text()}")
+                return await response.json()
+
+    def list_threads(self, limit: int = 30) -> Dict[str, Any]:
+        response = requests.get(
+            f"{self.base_url}/store/threads",
+            params={"limit": max(1, min(int(limit), 200))},
+            headers=self._headers,
+        )
+        if response.status_code != 200:
+            raise Exception(f"Error: {response.status_code} - {response.text}")
+        return response.json()
+
+    async def aweb_search_preview(
+            self,
+            query: str,
+            recency_days: int = 7,
+            max_results: int = 5,
+        ) -> Dict[str, Any]:
+        payload = {
+            "query": query,
+            "recency_days": max(1, min(int(recency_days), 30)),
+            "max_results": max(1, min(int(max_results), 10)),
+        }
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{self.base_url}/web_search/preview",
+                json=payload,
+                headers=self._headers,
+            ) as response:
+                if response.status != 200:
+                    raise Exception(f"Error: {response.status} - {await response.text()}")
+                return await response.json()
+
+    def web_search_preview(
+            self,
+            query: str,
+            recency_days: int = 7,
+            max_results: int = 5,
+        ) -> Dict[str, Any]:
+        payload = {
+            "query": query,
+            "recency_days": max(1, min(int(recency_days), 30)),
+            "max_results": max(1, min(int(max_results), 10)),
+        }
+        response = requests.post(
+            f"{self.base_url}/web_search/preview",
+            json=payload,
+            headers=self._headers,
+        )
+        if response.status_code != 200:
+            raise Exception(f"Error: {response.status_code} - {response.text}")
+        return response.json()
+
+    async def arecord_web_hitl_decision(
+            self,
+            query: str,
+            decision: str,
+            thread_id: str | None = None,
+            reason: str = "",
+            recency_days: int = 0,
+            preview_count: int = 0,
+            all_within_recency: bool = False,
+            source: str = "",
+            cache_hit: bool = False,
+        ) -> Dict[str, Any]:
+        payload = {
+            "query": str(query or "").strip(),
+            "decision": str(decision or "").strip().lower(),
+            "thread_id": str(thread_id or "").strip(),
+            "reason": str(reason or "").strip(),
+            "recency_days": int(recency_days or 0),
+            "preview_count": int(preview_count or 0),
+            "all_within_recency": bool(all_within_recency),
+            "source": str(source or ""),
+            "cache_hit": bool(cache_hit),
+        }
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{self.base_url}/hitl/web_decision",
+                json=payload,
+                headers=self._headers,
+            ) as response:
+                if response.status != 200:
+                    raise Exception(f"Error: {response.status} - {await response.text()}")
+                return await response.json()
+
+    def record_web_hitl_decision(
+            self,
+            query: str,
+            decision: str,
+            thread_id: str | None = None,
+            reason: str = "",
+            recency_days: int = 0,
+            preview_count: int = 0,
+            all_within_recency: bool = False,
+            source: str = "",
+            cache_hit: bool = False,
+        ) -> Dict[str, Any]:
+        payload = {
+            "query": str(query or "").strip(),
+            "decision": str(decision or "").strip().lower(),
+            "thread_id": str(thread_id or "").strip(),
+            "reason": str(reason or "").strip(),
+            "recency_days": int(recency_days or 0),
+            "preview_count": int(preview_count or 0),
+            "all_within_recency": bool(all_within_recency),
+            "source": str(source or ""),
+            "cache_hit": bool(cache_hit),
+        }
+        response = requests.post(
+            f"{self.base_url}/hitl/web_decision",
+            json=payload,
+            headers=self._headers,
+        )
+        if response.status_code != 200:
+            raise Exception(f"Error: {response.status_code} - {response.text}")
+        return response.json()
+
+    async def alist_web_hitl_decisions(
+            self,
+            limit: int = 50,
+            thread_id: str | None = None,
+        ) -> Dict[str, Any]:
+        params = {"limit": max(1, min(int(limit), 200))}
+        if thread_id:
+            params["thread_id"] = str(thread_id).strip()
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{self.base_url}/hitl/web_decisions",
+                params=params,
+                headers=self._headers,
+            ) as response:
+                if response.status != 200:
+                    raise Exception(f"Error: {response.status} - {await response.text()}")
+                return await response.json()
+
+    def list_web_hitl_decisions(
+            self,
+            limit: int = 50,
+            thread_id: str | None = None,
+        ) -> Dict[str, Any]:
+        params = {"limit": max(1, min(int(limit), 200))}
+        if thread_id:
+            params["thread_id"] = str(thread_id).strip()
+        response = requests.get(
+            f"{self.base_url}/hitl/web_decisions",
+            params=params,
+            headers=self._headers,
+        )
+        if response.status_code != 200:
+            raise Exception(f"Error: {response.status_code} - {response.text}")
+        return response.json()
