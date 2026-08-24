@@ -26,4 +26,4 @@ prometheus_client~=0.21.0
 psycopg[binary]
 streamlit~=1.37.0
 uvicorn~=0.30.5
-langgraph-checkpoint-postgres
+langgraph-checkpoint-postgres==1.0.9
