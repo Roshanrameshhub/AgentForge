@@ -20,7 +20,6 @@ import { ExecutionFlow } from '@/components/agent/ExecutionFlow';
 import { HitlInlineApproval } from '@/components/agent/HitlInlineApproval';
 import { FeedbackRating } from '@/components/agent/FeedbackRating';
 import { agentApiClient } from '@/lib/api/client';
-import { streamAgent } from '@/lib/api/stream';
 import { useToast } from '@/lib/context/ToastContext';
 import type { ChatMessage, MessageRole, ThreadSummary } from '@/lib/types/api';
 
@@ -34,6 +33,16 @@ interface UiMessage {
   toolCalls?: Array<{ name: string; args?: Record<string, unknown> }>;
   isStreaming?: boolean;
   requiresHitl?: boolean;
+}
+
+export function isHitlRequired(content: string): boolean {
+  if (!content || typeof content !== 'string') return false;
+  return (
+    content.includes('Human approval required before web-answer generation.') ||
+    content.includes('A web HITL decision is pending') ||
+    content.includes('web HITL decision is pending') ||
+    content.includes('Reply with `approve` or `reject')
+  );
 }
 
 function PlaygroundContent() {
@@ -99,7 +108,7 @@ function PlaygroundContent() {
           runId: m.run_id,
           timestamp: m.created_at ? new Date(m.created_at).toLocaleTimeString() : '',
           route: typeof m.metadata?.route === 'string' ? m.metadata.route : undefined,
-          requiresHitl: m.content.includes('Human approval required before web-answer generation.'),
+          requiresHitl: isHitlRequired(m.content),
         }));
         setMessages(mapped);
       } else {
@@ -223,7 +232,7 @@ function PlaygroundContent() {
     if (useStreamingMode) {
       // SSE Streaming via POST /stream
       try {
-        await streamAgent(
+        await agentApiClient.stream(
           {
             message: messageToSend,
             thread_id: threadId,
@@ -240,16 +249,18 @@ function PlaygroundContent() {
               scrollToBottom();
             },
             onMessage: (finalMsg) => {
-              const requiresHitl =
-                typeof finalMsg.content === 'string' &&
-                finalMsg.content.includes('Human approval required before web-answer generation.');
+              const contentStr =
+                typeof finalMsg.content === 'string'
+                  ? finalMsg.content
+                  : JSON.stringify(finalMsg.content, null, 2);
+              const requiresHitl = isHitlRequired(contentStr);
 
               setMessages((prev) =>
                 prev.map((msg) =>
                   msg.id === aiMsgId
                     ? {
                         ...msg,
-                        content: typeof finalMsg.content === 'string' ? finalMsg.content : msg.content,
+                        content: contentStr || msg.content,
                         runId: finalMsg.run_id,
                         isStreaming: false,
                         requiresHitl,
@@ -287,7 +298,6 @@ function PlaygroundContent() {
               loadThreads();
             },
           },
-          null,
           abortController.signal
         );
       } catch (err: unknown) {
@@ -321,9 +331,7 @@ function PlaygroundContent() {
             ? result.content
             : JSON.stringify(result.content, null, 2);
 
-        const requiresHitl = contentStr.includes(
-          'Human approval required before web-answer generation.'
-        );
+        const requiresHitl = isHitlRequired(contentStr);
 
         setMessages((prev) =>
           prev.map((msg) =>

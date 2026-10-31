@@ -68,7 +68,12 @@ export default function DashboardPage() {
             const parts = line.split(' ');
             const val = parseFloat(parts[parts.length - 1]);
             if (!isNaN(val)) total += val;
-            if (line.includes('status="5') || line.includes('status="4')) {
+            if (
+              line.includes('status_code="5') ||
+              line.includes('status_code="4') ||
+              line.includes('status="5') ||
+              line.includes('status="4')
+            ) {
               errors += val;
             }
           } else if (line.startsWith('http_request_duration_seconds_sum')) {

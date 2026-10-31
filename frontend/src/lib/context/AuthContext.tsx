@@ -109,6 +109,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  // Listen for global 401 Unauthorized events from apiClient or streamAgent
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleUnauthorized = () => {
+      logout();
+    };
+    window.addEventListener('agentforge_unauthorized', handleUnauthorized);
+    return () => {
+      window.removeEventListener('agentforge_unauthorized', handleUnauthorized);
+    };
+  }, [logout]);
+
   const value = useMemo(
     () => ({
       session,

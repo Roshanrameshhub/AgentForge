@@ -50,6 +50,11 @@ export async function streamAgent(
   }
 
   if (!response.ok) {
+    if (response.status === 401 && typeof window !== 'undefined') {
+      localStorage.removeItem('agentforge_token');
+      window.dispatchEvent(new CustomEvent('agentforge_unauthorized'));
+    }
+
     let detail = `Stream request failed: HTTP ${response.status}`;
     try {
       const errorJson = await response.json();
@@ -75,7 +80,11 @@ export async function streamAgent(
   try {
     while (true) {
       if (signal?.aborted) {
-        await reader.cancel();
+        try {
+          await reader.cancel();
+        } catch {
+          // Ignore cancellation error
+        }
         break;
       }
 
@@ -87,26 +96,34 @@ export async function streamAgent(
       buffer = blocks.pop() || '';
 
       for (const block of blocks) {
-        const line = block.trim();
-        if (!line.startsWith('data: ')) continue;
-
-        const dataStr = line.slice(6).trim();
-        if (dataStr === '[DONE]') {
-          callbacks.onDone?.();
-          return;
-        }
-
-        try {
-          const parsed = JSON.parse(dataStr) as StreamEvent;
-          if (parsed.type === 'token') {
-            callbacks.onToken?.(String(parsed.content));
-          } else if (parsed.type === 'message') {
-            callbacks.onMessage?.(parsed.content as ChatMessage);
-          } else if (parsed.type === 'error') {
-            callbacks.onError?.(String(parsed.content));
+        const rawLines = block.split('\n');
+        for (const rawLine of rawLines) {
+          const line = rawLine.trim();
+          if (!line || line.startsWith(':')) {
+            // Comment / heartbeat keepalive
+            continue;
           }
-        } catch {
-          // If JSON parse fails, ignore malformed chunk
+
+          if (line.startsWith('data:')) {
+            const dataStr = line.replace(/^data:\s?/, '').trim();
+            if (dataStr === '[DONE]') {
+              callbacks.onDone?.();
+              return;
+            }
+
+            try {
+              const parsed = JSON.parse(dataStr) as StreamEvent;
+              if (parsed.type === 'token') {
+                callbacks.onToken?.(String(parsed.content));
+              } else if (parsed.type === 'message') {
+                callbacks.onMessage?.(parsed.content as ChatMessage);
+              } else if (parsed.type === 'error') {
+                callbacks.onError?.(String(parsed.content));
+              }
+            } catch {
+              // Ignore malformed chunk
+            }
+          }
         }
       }
     }

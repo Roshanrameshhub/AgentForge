@@ -1,5 +1,6 @@
 import { ENDPOINTS } from './endpoints';
 import { ApiError } from './errors';
+import { streamAgent, type StreamCallbacks } from './stream';
 import type {
   AuthLoginInput,
   AuthRegisterInput,
@@ -10,14 +11,21 @@ import type {
   HitlDecisionPayload,
   HitlEventsResponse,
   ReadyResponse,
+  StreamInput,
   ThreadHistoryResponse,
   ThreadsResponse,
   UserInput,
   WebSearchPreviewResponse,
 } from '../types/api';
 
+export interface RequestOptions extends RequestInit {
+  timeoutMs?: number;
+  retries?: number;
+}
+
 /**
  * AgentApiClient — Centralized, typed API client for AgentForge FastAPI backend.
+ * Provides request timeouts, safe GET retries, 401 invalidation, and unified streaming.
  */
 export class AgentApiClient {
   private token: string | null = null;
@@ -63,53 +71,113 @@ export class AgentApiClient {
 
   private async request<T>(
     url: string,
-    options: RequestInit = {}
+    options: RequestOptions = {}
   ): Promise<T> {
-    const headers = this.getHeaders(
-      (options.headers as Record<string, string>) || {}
-    );
+    const method = (options.method || 'GET').toUpperCase();
+    const isIdempotent = method === 'GET' || method === 'HEAD';
+    const maxRetries = options.retries ?? (isIdempotent ? 1 : 0);
+    const timeoutMs = options.timeoutMs ?? 30000;
 
-    let response: Response;
-    try {
-      response = await fetch(url, {
-        ...options,
-        headers,
-      });
-    } catch (err) {
-      throw new ApiError(
-        0,
-        `Network request failed: ${err instanceof Error ? err.message : String(err)}`
-      );
-    }
+    let attempt = 0;
+    while (true) {
+      attempt++;
+      const controller = new AbortController();
+      const userSignal = options.signal;
+      let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
-    if (!response.ok) {
-      let detail = `HTTP ${response.status} ${response.statusText}`;
-      let raw: unknown = null;
-      try {
-        raw = await response.json();
-        if (typeof raw === 'object' && raw !== null && 'detail' in raw) {
-          detail = String((raw as { detail: unknown }).detail);
-        }
-      } catch {
-        try {
-          const text = await response.text();
-          if (text) detail = text;
-        } catch {
-          // Ignore
-        }
+      if (userSignal?.aborted) {
+        controller.abort(userSignal.reason);
+      } else if (userSignal) {
+        userSignal.addEventListener('abort', () => controller.abort(userSignal.reason), {
+          once: true,
+        });
       }
-      throw new ApiError(response.status, detail, raw);
-    }
 
-    if (response.status === 204) {
-      return {} as T;
-    }
+      if (timeoutMs > 0) {
+        timeoutId = setTimeout(() => {
+          controller.abort(new Error(`Request timed out after ${timeoutMs}ms`));
+        }, timeoutMs);
+      }
 
-    const contentType = response.headers.get('content-type') || '';
-    if (contentType.includes('application/json')) {
-      return (await response.json()) as T;
+      const headers = this.getHeaders(
+        (options.headers as Record<string, string>) || {}
+      );
+
+      let response: Response;
+      try {
+        response = await fetch(url, {
+          ...options,
+          headers,
+          signal: controller.signal,
+        });
+      } catch (err: unknown) {
+        if (timeoutId) clearTimeout(timeoutId);
+        if (userSignal?.aborted) {
+          throw new ApiError(0, 'Request aborted by user');
+        }
+
+        // Retry on network errors for idempotent requests
+        if (isIdempotent && attempt <= maxRetries) {
+          const backoff = 300 * Math.pow(2, attempt - 1) + Math.random() * 100;
+          await new Promise((resolve) => setTimeout(resolve, backoff));
+          continue;
+        }
+
+        throw new ApiError(
+          0,
+          `Network request failed: ${err instanceof Error ? err.message : String(err)}`
+        );
+      } finally {
+        if (timeoutId) clearTimeout(timeoutId);
+      }
+
+      // Safe retry for transient 502, 503, 504 server errors on GET/HEAD
+      if (
+        isIdempotent &&
+        attempt <= maxRetries &&
+        (response.status === 502 || response.status === 503 || response.status === 504)
+      ) {
+        const backoff = 300 * Math.pow(2, attempt - 1) + Math.random() * 100;
+        await new Promise((resolve) => setTimeout(resolve, backoff));
+        continue;
+      }
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          this.setToken(null);
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('agentforge_unauthorized'));
+          }
+        }
+
+        let detail = `HTTP ${response.status} ${response.statusText}`;
+        let raw: unknown = null;
+        try {
+          raw = await response.json();
+          if (typeof raw === 'object' && raw !== null && 'detail' in raw) {
+            detail = String((raw as { detail: unknown }).detail);
+          }
+        } catch {
+          try {
+            const text = await response.text();
+            if (text) detail = text;
+          } catch {
+            // Ignore
+          }
+        }
+        throw new ApiError(response.status, detail, raw);
+      }
+
+      if (response.status === 204) {
+        return {} as T;
+      }
+
+      const contentType = response.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        return (await response.json()) as T;
+      }
+      return (await response.text()) as unknown as T;
     }
-    return (await response.text()) as unknown as T;
   }
 
   // --- Auth Endpoints ---
@@ -132,14 +200,23 @@ export class AgentApiClient {
     return result;
   }
 
-  // --- Multi-Agent Execution Endpoints ---
+  // --- Multi-Agent Execution & Streaming ---
 
   public async invoke(input: UserInput, signal?: AbortSignal): Promise<ChatMessage> {
     return this.request<ChatMessage>(ENDPOINTS.INVOKE, {
       method: 'POST',
       body: JSON.stringify(input),
       signal,
+      timeoutMs: 60000, // 60s timeout for agent reasoning
     });
+  }
+
+  public async stream(
+    input: StreamInput,
+    callbacks: StreamCallbacks,
+    signal?: AbortSignal
+  ): Promise<void> {
+    return streamAgent(input, callbacks, this.getToken(), signal);
   }
 
   // --- Human-In-The-Loop Endpoints ---
@@ -236,3 +313,4 @@ export class AgentApiClient {
 // Global default singleton client
 export const apiClient = new AgentApiClient();
 export const agentApiClient = apiClient;
+
