@@ -79,6 +79,7 @@ export interface WebSearchPreviewResponse {
 export interface HitlDecisionPayload {
   query: string;
   decision: 'approved' | 'rejected';
+  action?: 'approve' | 'reject';
   thread_id?: string;
   user_id?: string;
   reason?: string;
@@ -87,6 +88,7 @@ export interface HitlDecisionPayload {
   all_within_recency?: boolean;
   source?: string;
   cache_hit?: boolean;
+  route?: string;
 }
 
 export interface HitlEvent {

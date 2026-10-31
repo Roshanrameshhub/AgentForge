@@ -160,9 +160,14 @@ export class AgentApiClient {
   }
 
   public async recordHitlDecision(payload: HitlDecisionPayload): Promise<{ status: string }> {
+    const decision = payload.decision || (payload.action === 'approve' ? 'approved' : 'rejected');
+    const body: HitlDecisionPayload = {
+      ...payload,
+      decision,
+    };
     return this.request<{ status: string }>(ENDPOINTS.HITL_WEB_DECISION, {
       method: 'POST',
-      body: JSON.stringify(payload),
+      body: JSON.stringify(body),
     });
   }
 
