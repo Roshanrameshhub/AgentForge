@@ -62,6 +62,7 @@ export function HeaderBar() {
     if (pathname.startsWith('/dashboard')) return 'Mission Control Dashboard';
     if (pathname.startsWith('/playground')) return 'Agent Playground';
     if (pathname.startsWith('/conversations')) return 'Conversation History';
+    if (pathname.startsWith('/workflows')) return 'Workflow Orchestration Engine';
     if (pathname.startsWith('/approvals')) return 'Human Approvals';
     if (pathname.startsWith('/knowledge')) return 'Knowledge Base & Graph';
     if (pathname.startsWith('/tools')) return 'MCP Tool Registry';

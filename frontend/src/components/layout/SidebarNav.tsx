@@ -16,6 +16,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Sparkles,
+  GitBranch,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Tooltip } from '@/components/ui/Tooltip';
@@ -32,6 +33,7 @@ const NAV_ITEMS: NavItem[] = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { name: 'Playground', href: '/playground', icon: Terminal },
   { name: 'Conversations', href: '/conversations', icon: MessageSquare },
+  { name: 'Workflows', href: '/workflows', icon: GitBranch },
   { name: 'Human Approvals', href: '/approvals', icon: CheckSquare },
   { name: 'Knowledge Base', href: '/knowledge', icon: Database },
   { name: 'MCP Tools', href: '/tools', icon: Wrench },
