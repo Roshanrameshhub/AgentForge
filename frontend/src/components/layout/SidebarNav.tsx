@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { motion } from 'framer-motion';
 import {
+  LayoutDashboard,
   Terminal,
   MessageSquare,
   CheckSquare,
@@ -28,6 +29,7 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
+  { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { name: 'Playground', href: '/playground', icon: Terminal },
   { name: 'Conversations', href: '/conversations', icon: MessageSquare },
   { name: 'Human Approvals', href: '/approvals', icon: CheckSquare },

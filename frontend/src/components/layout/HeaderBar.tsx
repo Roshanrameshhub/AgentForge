@@ -59,6 +59,7 @@ export function HeaderBar() {
 
   // Derive human-readable page title
   const pageTitle = (() => {
+    if (pathname.startsWith('/dashboard')) return 'Mission Control Dashboard';
     if (pathname.startsWith('/playground')) return 'Agent Playground';
     if (pathname.startsWith('/conversations')) return 'Conversation History';
     if (pathname.startsWith('/approvals')) return 'Human Approvals';

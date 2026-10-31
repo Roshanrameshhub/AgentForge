@@ -5,17 +5,18 @@ export interface InputProps
   extends React.InputHTMLAttributes<HTMLInputElement> {
   error?: string;
   leftIcon?: React.ReactNode;
+  icon?: React.ComponentType<{ className?: string }>;
   rightElement?: React.ReactNode;
 }
 
 export const Input = React.forwardRef<HTMLInputElement, InputProps>(
-  ({ className, type = 'text', error, leftIcon, rightElement, disabled, ...props }, ref) => {
+  ({ className, type = 'text', error, leftIcon, icon: Icon, rightElement, disabled, ...props }, ref) => {
     return (
       <div className="w-full">
         <div className="relative flex items-center">
-          {leftIcon && (
+          {(leftIcon || Icon) && (
             <div className="absolute left-3 text-slate-500 pointer-events-none flex items-center justify-center">
-              {leftIcon}
+              {leftIcon || (Icon && <Icon className="w-4 h-4" />)}
             </div>
           )}
           <input
