@@ -1,0 +1,59 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --background: #06080d;
+    --foreground: #f1f5f9;
+    --surface-base: #0b0e14;
+    --surface-elevated: #111620;
+    --surface-highlight: #1a2130;
+    --border-subtle: rgba(255, 255, 255, 0.08);
+    --border-strong: rgba(255, 255, 255, 0.16);
+    --accent-emerald: #10b981;
+    --accent-sky: #38bdf8;
+    --accent-amber: #f59e0b;
+    --accent-rose: #ef4444;
+  }
+
+  /* Light Theme Variant */
+  :root:not(.dark) {
+    --background: #f8fafc;
+    --foreground: #0f172a;
+    --surface-base: #ffffff;
+    --surface-elevated: #f1f5f9;
+    --surface-highlight: #e2e8f0;
+    --border-subtle: rgba(0, 0, 0, 0.08);
+    --border-strong: rgba(0, 0, 0, 0.16);
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  overflow-x: hidden;
+}
+
+/* Custom Technical Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.2);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.4);
+}
+
+/* Code & Pre Styling */
+pre, code {
+  font-family: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
