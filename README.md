@@ -510,12 +510,13 @@ You can monitor:
 ```text
 AgentForge/
 │
+├── frontend/              # Next.js 16 Multi-Agent Workbench (React 19, Turbopack, Tailwind v4)
 ├── agent/                 # AI orchestration + agents + tools
 ├── client/                # Python client
 ├── service/               # FastAPI service + persistence
 ├── schema/                # Request / response schemas
-├── scripts/               # RAG ingestion
-├── docs/                  # Architecture documentation
+├── scripts/               # RAG ingestion & tests
+├── docs/                  # Architecture & integration documentation
 ├── docker/                # Container definitions
 ├── k8s/                   # Kubernetes manifests
 ├── monitoring/            # Prometheus configuration
@@ -529,7 +530,7 @@ AgentForge/
 └── README.md
 ```
 
-The current repository separates orchestration, tools, local RAG, graph RAG, persistence, service APIs, monitoring, and deployment.
+The current repository separates orchestration, tools, local RAG, graph RAG, persistence, service APIs, monitoring, deployment, and the modern Next.js 16 workbench.
 
 ---
 
@@ -550,6 +551,41 @@ The repository currently includes:
 * manual dispatch
 
 These workflows are already documented in the repository.
+
+---
+
+# 🖥️ Next.js 16 Multi-Agent Workbench
+
+AgentForge includes an enterprise-grade web application built with **Next.js 16 (App Router)**, **React 19**, **TailwindCSS v4**, and **Framer Motion** physics.
+
+### Key Capabilities & Routes
+- **Mission Control (`/dashboard`):** Asymmetric bento grid with real-time `/healthz` liveness, `/readyz` component readiness, SQLite conversational thread counts, and OpenMetrics request rates.
+- **Agent Playground (`/playground`):** Real-time Server-Sent Events (SSE) token streaming, dynamic model selection (`llama-3.3-70b-versatile`), inline Human-in-the-Loop authorization gates, and LangSmith feedback scoring.
+- **Session History (`/conversations`):** Persistent multi-turn conversation storage with turn-by-turn inspection, checkpoint restore, and one-click JSON transcript download.
+- **Workflow Topology (`/workflows`):** Interactive visualization of the 12-agent LangGraph supervisor hierarchy, execution stages, and deterministic routing paths.
+- **HITL Approvals (`/approvals`):** Dedicated supervisory queue allowing human operators to preview search results, approve/reject web queries, and maintain an immutable decision audit log.
+- **Knowledge RAG (`/knowledge`):** Explains and simulates the 6-stage Hybrid RAG pipeline (Reciprocal Rank Fusion with $K=60$) alongside an interactive SVG Knowledge Graph entity explorer.
+- **MCP Tool Registry (`/tools`):** FastMCP tool execution sandbox with JSON schema inspection for `web_search` and `calculate`.
+- **Platform Telemetry (`/observability`):** Real-time Prometheus OpenMetrics parser with HTTP status code distributions (2xx, 3xx, 4xx, 5xx), average latency, and memory monitoring.
+- **Settings & Security (`/settings`):** Session identity management, PBKDF2 parameters, inference preferences, and theme toggle.
+
+### Frontend Quick Start
+```bash
+cd frontend
+npm install
+npm run dev
+```
+Open [http://localhost:3000](http://localhost:3000) in your browser.
+
+Run automated integration tests:
+```bash
+npm test
+```
+
+Create production build:
+```bash
+npm run build
+```
 
 ---
 

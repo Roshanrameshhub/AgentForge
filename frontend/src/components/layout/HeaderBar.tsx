@@ -10,6 +10,8 @@ import {
   User,
   ShieldCheck,
   Radio,
+  Menu,
+  X,
 } from 'lucide-react';
 import { useAuth } from '@/lib/context/AuthContext';
 import { useTheme } from '@/lib/context/ThemeContext';
@@ -19,7 +21,12 @@ import { Badge } from '@/components/ui/Badge';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { Button } from '@/components/ui/Button';
 
-export function HeaderBar() {
+interface HeaderBarProps {
+  onToggleMobile?: () => void;
+  isMobileOpen?: boolean;
+}
+
+export function HeaderBar({ onToggleMobile, isMobileOpen }: HeaderBarProps) {
   const pathname = usePathname();
   const router = useRouter();
   const { session, logout } = useAuth();
@@ -27,7 +34,7 @@ export function HeaderBar() {
 
   const [backendStatus, setBackendStatus] = useState<StatusType>('busy');
   const [statusText, setStatusText] = useState<string>('Connecting…');
-  const [selectedModel] = useState<string>('gpt-4o-mini');
+  const [selectedModel] = useState<string>('llama-3.3-70b-versatile');
 
   const checkReadiness = useCallback(async () => {
     try {
@@ -76,6 +83,17 @@ export function HeaderBar() {
     <header className="h-13 bg-slate-925/90 border-b border-slate-800/80 px-4 flex items-center justify-between shrink-0 select-none backdrop-blur-md z-20">
       {/* Left: Active context & title */}
       <div className="flex items-center gap-3 min-w-0">
+        {onToggleMobile && (
+          <button
+            type="button"
+            onClick={onToggleMobile}
+            className="md:hidden p-1.5 -ml-1 text-slate-400 hover:text-slate-200 rounded-md hover:bg-slate-900 transition-colors"
+            aria-label={isMobileOpen ? 'Close navigation menu' : 'Open navigation menu'}
+          >
+            {isMobileOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
+          </button>
+        )}
+
         <div className="flex items-center gap-2">
           <Radio className="w-4 h-4 text-emerald-400 shrink-0" />
           <h1 className="font-semibold text-sm text-slate-100 tracking-tight truncate">

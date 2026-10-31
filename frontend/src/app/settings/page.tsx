@@ -45,7 +45,7 @@ export default function SettingsPage() {
 
   // Application preferences (persisted in localStorage)
   const [streamMode, setStreamMode] = useState<boolean>(true);
-  const [defaultModel, setDefaultModel] = useState<string>('gpt-4o-mini');
+  const [defaultModel, setDefaultModel] = useState<string>('llama-3.3-70b-versatile');
   const [requireHitl, setRequireHitl] = useState<boolean>(true);
   const [maxSearchResults, setMaxSearchResults] = useState<number>(5);
 
@@ -396,7 +396,7 @@ export default function SettingsPage() {
               Default LLM model identifier provided to the LangGraph supervisor node.
             </p>
             <div className="flex flex-wrap gap-2 pt-1">
-              {['gpt-4o-mini', 'llama-3.3-70b-versatile', 'mixtral-8x7b-32768'].map((m) => (
+              {['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'gpt-4o-mini'].map((m) => (
                 <button
                   key={m}
                   type="button"

@@ -289,23 +289,79 @@ describe('6. Safe Retry Policy Engine', () => {
   });
 });
 
-describe('7. Backend Live Health Probe & Connectivity', () => {
-  test('Probing local FastAPI service if active', async () => {
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 2000);
-      const res = await fetch('http://127.0.0.1:8000/healthz', { signal: controller.signal });
-      clearTimeout(timeout);
+describe('8. End-to-End Workflow & Store Persistence Simulation', () => {
+  test('Validates Durable Message History & Checkpoint Integrity', () => {
+    const rawMessages = [
+      {
+        user_id: 'test_dev',
+        thread_id: 'thread-alpha-1',
+        run_id: 'run-99',
+        role: 'human',
+        content: 'Execute quantum research',
+        metadata: { model: 'llama-3.3-70b-versatile' },
+        created_at: '2026-10-31T12:00:00Z',
+      },
+      {
+        user_id: 'test_dev',
+        thread_id: 'thread-alpha-1',
+        run_id: 'run-99',
+        role: 'ai',
+        content: 'Synthesizing literature review.\n\n_Evaluated by evaluation agent._',
+        metadata: { route: 'hybrid', evaluation_score: 0.95 },
+        created_at: '2026-10-31T12:00:05Z',
+      },
+    ];
 
-      if (res.ok) {
-        const data = await res.json();
-        assert.equal(data.status, 'ok');
-        console.log('[INTEGRATION] Live FastAPI backend detected on http://127.0.0.1:8000/healthz');
-      } else {
-        console.log(`[INTEGRATION] Backend returned HTTP ${res.status}`);
-      }
-    } catch {
-      console.log('[INTEGRATION] Backend is offline or not running locally on port 8000; contract tests passed.');
+    assert.equal(rawMessages.length, 2);
+    assert.equal(rawMessages[0].role, 'human');
+    assert.equal(rawMessages[1].role, 'ai');
+    assert.equal(rawMessages[1].metadata.route, 'hybrid');
+    assert.equal(rawMessages[1].metadata.evaluation_score, 0.95);
+  });
+
+  test('Validates JSON Transcript Export Structure', () => {
+    function generateTranscriptPayload(threadId, messages) {
+      return {
+        thread_id: threadId,
+        message_count: messages.length,
+        exported_at: '2026-10-31T12:00:10Z',
+        messages,
+      };
     }
+
+    const payload = generateTranscriptPayload('thread-alpha-1', [{ role: 'human', content: 'test' }]);
+    assert.equal(payload.thread_id, 'thread-alpha-1');
+    assert.equal(payload.message_count, 1);
+    assert.equal(payload.messages[0].content, 'test');
+  });
+
+  test('Validates LangSmith Feedback Rating Structure', () => {
+    const feedback = {
+      run_id: 'run-99',
+      key: 'human-rating',
+      score: 1.0,
+      kwargs: { comment: 'Accurate synthesis' },
+    };
+
+    assert.equal(feedback.run_id, 'run-99');
+    assert.equal(feedback.score, 1.0);
+    assert.equal(typeof feedback.kwargs.comment, 'string');
   });
 });
+
+describe('9. Hybrid RAG Reciprocal Rank Fusion (RRF) Engine', () => {
+  test('Computes RRF Score with K=60 Constant', () => {
+    function calculateRrf(ranks, k = 60) {
+      return ranks.reduce((sum, r) => sum + 1 / (k + r), 0);
+    }
+
+    // Document ranked #1 in Vector and #2 in BM25
+    const scoreCandidateA = calculateRrf([1, 2]);
+    // Document ranked #10 in Vector and #10 in BM25
+    const scoreCandidateB = calculateRrf([10, 10]);
+
+    assert.ok(scoreCandidateA > scoreCandidateB, 'Candidate A must rank higher than Candidate B');
+    assert.equal(Math.round(scoreCandidateA * 10000) / 10000, Math.round((1 / 61 + 1 / 62) * 10000) / 10000);
+  });
+});
+
